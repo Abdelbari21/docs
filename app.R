@@ -1,15 +1,19 @@
 # Load necessary libraries
-required_packages <- c("shiny", "shinydashboard", "tidyverse", "lubridate", "plotly", "DT", 
-                       "forecast", "bcrypt", "httr", "jsonlite", "keras", "shinyjs", "shinyauthr", 
-                       "leaflet", "rsconnect")
-
-installed_packages <- rownames(installed.packages())
-for (pkg in required_packages) {
-  if (!(pkg %in% installed_packages)) {
-    install.packages(pkg, dependencies = TRUE)
-  }
-  library(pkg, character.only = TRUE)
-}
+library(shiny)
+library(shinydashboard)
+library(tidyverse)
+library(lubridate)
+library(plotly)
+library(DT)
+library(forecast)
+library(bcrypt)
+library(httr)
+library(jsonlite)
+library(keras)
+library(shinyjs)
+library(shinyauthr)
+library(leaflet)
+library(rsconnect)
 
 # Helper Functions
 
