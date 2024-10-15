@@ -1,26 +1,19 @@
 # Load necessary libraries
-library(shiny)
-library(shinydashboard)
-library(tidyverse)
-library(lubridate)
-library(plotly)
-library(DT)
-library(forecast)
-library(bcrypt)
-library(httr)
-library(jsonlite)
-library(keras)
-library(shinyjs)
-library(shinyauthr)
-library(leaflet)
-library(rsconnect)
+required_packages <- c("shiny", "shinydashboard", "tidyverse", "lubridate", "plotly", "DT", 
+                       "forecast", "bcrypt", "httr", "jsonlite", "keras", "shinyjs", "shinyauthr", 
+                       "leaflet", "rsconnect")
 
-
+installed_packages <- rownames(installed.packages())
+for (pkg in required_packages) {
+  if (!(pkg %in% installed_packages)) {
+    install.packages(pkg, dependencies = TRUE)
+  }
+  library(pkg, character.only = TRUE)
+}
 
 # Helper Functions
 
 # Data Acquisition with Error Handling
-# This function fetches COVID-19 data from a remote CSV file and processes it into a useful format.
 fetch_covid_data <- function() {
   tryCatch({
     url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv"
@@ -32,6 +25,10 @@ fetch_covid_data <- function() {
                    names_to = "date",
                    values_to = "confirmed") %>%
       mutate(date = as.Date(date, format = "%m/%d/%y"))
+    
+    # Fill missing values with 0
+    data_long <- data_long %>%
+      replace_na(list(confirmed = 0))
     
     # Group data by Country/Region and date, summing confirmed cases
     data_grouped <- data_long %>%
@@ -46,17 +43,14 @@ fetch_covid_data <- function() {
 }
 
 # LSTM Forecasting Model
-# This function trains an LSTM model on confirmed COVID-19 cases for a specific country and makes predictions.
 train_lstm_model <- function(data, country, days_to_predict = 30) {
-  # Filter data for the specified country and arrange by date
   country_data <- data %>%
     filter(`Country/Region` == country) %>%
     arrange(date)
   
   X <- country_data$confirmed
-  X <- scale(X)  # Standardize the data
+  X <- scale(X)
   
-  # Create sequences of data for LSTM input
   n_timesteps <- 7
   n_features <- 1
   X_seq <- array(0, dim = c(length(X) - n_timesteps, n_timesteps, n_features))
@@ -67,7 +61,6 @@ train_lstm_model <- function(data, country, days_to_predict = 30) {
     y_seq[i] <- X[i+n_timesteps]
   }
   
-  # Build and train LSTM model
   model <- keras_model_sequential() %>%
     layer_lstm(units = 50, input_shape = c(n_timesteps, n_features)) %>%
     layer_dense(units = 1)
@@ -75,7 +68,6 @@ train_lstm_model <- function(data, country, days_to_predict = 30) {
   model %>% compile(optimizer = optimizer_adam(), loss = "mse")
   model %>% fit(X_seq, y_seq, epochs = 100, batch_size = 32, verbose = 0)
   
-  # Make predictions
   last_sequence <- tail(X, n_timesteps)
   predictions <- numeric(days_to_predict)
   
@@ -85,13 +77,11 @@ train_lstm_model <- function(data, country, days_to_predict = 30) {
     last_sequence <- c(last_sequence[-1], next_pred)
   }
   
-  # Reverse the standardization
   predictions <- predictions * attr(X, "scaled:scale") + attr(X, "scaled:center")
   return(predictions)
 }
 
 # UI setup
-# Define the structure and layout of the Shiny dashboard
 ui <- dashboardPage(
   dashboardHeader(title = "Advanced COVID-19 Dashboard"),
   dashboardSidebar(
@@ -105,20 +95,17 @@ ui <- dashboardPage(
   ),
   dashboardBody(
     tabItems(
-      # Global Overview tab
       tabItem(tabName = "overview",
               fluidRow(
-                box(leafletOutput("global_map"), width = 12)  # Output the global map
+                box(leafletOutput("global_map"), width = 12)
               )
       ),
-      # Country Analysis tab
       tabItem(tabName = "country_analysis",
               fluidRow(
                 box(selectInput("country", "Select Country:", choices = NULL), width = 4),
                 box(plotlyOutput("country_trend"), width = 8)
               )
       ),
-      # Forecasting tab
       tabItem(tabName = "forecast",
               fluidRow(
                 box(selectInput("forecast_country", "Select Country:", choices = NULL), width = 4),
@@ -126,7 +113,6 @@ ui <- dashboardPage(
                 box(plotlyOutput("forecast_plot"), width = 12)
               )
       ),
-      # Scenario Analysis tab
       tabItem(tabName = "scenario_analysis",
               fluidRow(
                 box(selectInput("scenario_country", "Select Country:", choices = NULL), width = 4),
@@ -135,7 +121,6 @@ ui <- dashboardPage(
                 box(plotlyOutput("scenario_plot"), width = 12)
               )
       ),
-      # Data Explorer tab
       tabItem(tabName = "data_explorer",
               fluidRow(
                 box(DTOutput("data_table"), width = 12)
@@ -146,11 +131,9 @@ ui <- dashboardPage(
 )
 
 # Server logic
-# Define the server side logic for the Shiny app
 server <- function(input, output, session) {
   covid_data <- reactiveVal()
   
-  # Observe and update data and input choices
   observe({
     data <- fetch_covid_data()
     if (!is.null(data)) {
@@ -161,7 +144,6 @@ server <- function(input, output, session) {
     }
   })
   
-  # Render the global map
   output$global_map <- renderLeaflet({
     req(covid_data())
     data <- covid_data()
@@ -171,7 +153,6 @@ server <- function(input, output, session) {
                  radius = ~sqrt(confirmed) * 500, popup = ~`Country/Region`)
   })
   
-  # Render the country trend plot
   output$country_trend <- renderPlotly({
     req(input$country, covid_data())
     data <- covid_data() %>% filter(`Country/Region` == input$country)
@@ -181,7 +162,6 @@ server <- function(input, output, session) {
              yaxis = list(title = "Total Confirmed Cases"))
   })
   
-  # Render the forecast plot
   output$forecast_plot <- renderPlotly({
     req(input$forecast_country, covid_data())
     
@@ -204,7 +184,6 @@ server <- function(input, output, session) {
              yaxis = list(title = "Total Confirmed Cases"))
   })
   
-  # Render the scenario analysis plot
   output$scenario_plot <- renderPlotly({
     req(input$scenario_country, input$intervention_effect, input$intervention_date, covid_data())
     
@@ -212,7 +191,6 @@ server <- function(input, output, session) {
       filter(`Country/Region` == input$scenario_country) %>%
       arrange(date)
     
-    # Apply the intervention effect on cases starting from the intervention date
     intervention_date <- as.Date(input$intervention_date)
     effect <- 1 + (input$intervention_effect / 100)
     
@@ -231,13 +209,11 @@ server <- function(input, output, session) {
              yaxis = list(title = "Total Confirmed Cases"))
   })
   
-  # Render the data table
   output$data_table <- renderDT({
     req(covid_data())
-    datatable(covid_data(), options = list(pageLength = 10, scrollX = TRUE))  # Updated with scrollX and pageLength
+    datatable(covid_data(), options = list(pageLength = 10, scrollX = TRUE))
   })
 }
 
 # Run the application 
 shinyApp(ui = ui, server = server)
-
